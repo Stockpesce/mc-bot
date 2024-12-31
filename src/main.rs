@@ -151,7 +151,7 @@ async fn login(bot: &Client, event: &AzaleaEvent, state: &State) -> anyhow::Resu
 }
 
 // Then modify your handle function to use this:
-async fn handle(bot: Client, event: AzaleaEvent, state: State) -> anyhow::Result<()> {
+async fn handle(bot: Client, event: AzaleaEvent, state: State) -> anyhow::Result<()> + Send + Sync {
     if !login(&bot, &event, &state).await? {
         return Ok(());
     }
