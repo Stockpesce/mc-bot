@@ -49,8 +49,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Keep the main task running
     tokio::signal::ctrl_c().await?;
-        Ok(())
-    })
+    Ok(())
 }
 
 fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
@@ -150,8 +149,7 @@ async fn login(bot: &Client, event: &AzaleaEvent, state: &State) -> anyhow::Resu
 }
 
 // Then modify your handle function to use this:
-async fn handle(bot: Client, event: AzaleaEvent, state: State) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
-    Box::pin(async move {
+async fn handle(bot: Client, event: AzaleaEvent, state: State) -> anyhow::Result<()> {
     if !login(&bot, &event, &state).await? {
         return Ok(());
     }
