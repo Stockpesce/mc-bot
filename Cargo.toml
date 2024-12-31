@@ -1,0 +1,12 @@
+[package]
+name = "mcbot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.95"
+azalea = { git = "https://github.com/azalea-rs/azalea", version = "0.11.0" }
+azalea-entity = "0.11.0"
+rand = "0.8.5"
+sha256 = "1.5.0"
+tokio = { version = "1.42.0", features = ["full"] }
