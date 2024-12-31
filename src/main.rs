@@ -1,4 +1,5 @@
-use azalea::{prelude::*, Account, Client, ClientBuilder, Event};
+use azalea::{prelude::*, Account, Client, ClientBuilder, Event, Event as AzaleaEvent};
+use bevy_ecs::prelude::*;
 use bevy_ecs::prelude::Component;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -82,7 +83,7 @@ pub struct State {
 }
 
 impl Component for State {
-    type STORAGE_TYPE = bevy_ecs::storage::TableStorage;
+    const STORAGE_TYPE: StorageType = StorageType::Table;
 }
 
 impl Default for State {
