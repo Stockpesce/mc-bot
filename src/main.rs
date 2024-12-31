@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) where {
+fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
     tokio::spawn(async move {
         let account = Account::offline(&username);
         let state = State {
