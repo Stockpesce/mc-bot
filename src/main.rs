@@ -1,6 +1,8 @@
 use azalea::{prelude::*, Account, Client, ClientBuilder, Event, Event as AzaleaEvent};
 use bevy_ecs::component::StorageType;
 use bevy_ecs::prelude::Component;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use sqlx::SqlitePool;
