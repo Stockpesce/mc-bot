@@ -1,4 +1,5 @@
 use azalea::prelude::*;
+use bevy_ecs::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use sqlx::SqlitePool;
@@ -73,12 +74,15 @@ fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
     });
 }
 
-#[derive(Clone, Component)]
-#[component(storage = "HashMapStorage")]
+#[derive(Clone)]
 pub struct State {
     password: Arc<Mutex<String>>,
     has_logged_in: Arc<AtomicBool>,
     db_pool: Arc<SqlitePool>,
+}
+
+impl Component for State {
+    type Storage = HashMapStorage<Self>;
 }
 
 impl Default for State {
