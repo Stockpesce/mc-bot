@@ -1,5 +1,5 @@
 use azalea::{prelude::*, Account, Client, ClientBuilder, Event, Event as AzaleaEvent};
-use bevy_ecs::prelude::*;
+use bevy_ecs::component::StorageType;
 use bevy_ecs::prelude::Component;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -34,9 +34,13 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Start master bot in the background
+    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
+        Box::pin(handle(client, event, state))
+    };
+
     tokio::spawn(async move {
         ClientBuilder::new()
-            .set_handler(handle)
+            .set_handler(handler)
             .set_state(state)
             .start(master_account, "mc.brailor.me")
             .await
@@ -45,21 +49,26 @@ async fn main() -> anyhow::Result<()> {
 
     // Keep the main task running
     tokio::signal::ctrl_c().await?;
-    Ok(())
+        Ok(())
+    })
 }
 
 fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
+    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
+        Box::pin(handle(client, event, state))
+    };
+
     tokio::spawn(async move {
         let account = Account::offline(&username);
         let state = State {
             password: Arc::new(Mutex::new(String::new())),
-            has_logged_in: Arc::new(AtomicBool::new(false)),
+            has_logged_in: Arc::new(AtomicBool::new(false)), 
             db_pool,
         };
 
         loop {
             let result = ClientBuilder::new()
-                .set_handler(handle)
+                .set_handler(handler)
                 .set_state(state.clone())
                 .start(account.clone(), "mc.brailor.me")
                 .await;
@@ -141,7 +150,8 @@ async fn login(bot: &Client, event: &AzaleaEvent, state: &State) -> anyhow::Resu
 }
 
 // Then modify your handle function to use this:
-async fn handle(bot: Client, event: AzaleaEvent, state: State) -> anyhow::Result<()> {
+async fn handle(bot: Client, event: AzaleaEvent, state: State) -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
+    Box::pin(async move {
     if !login(&bot, &event, &state).await? {
         return Ok(());
     }
