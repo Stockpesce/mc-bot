@@ -2,7 +2,7 @@ use anyhow::Result;
 use sqlx::sqlite::SqlitePool;
 
 pub async fn init_db() -> Result<SqlitePool> {
-    let pool = SqlitePool::connect("sqlite:slaves.db").await?;
+    let pool = SqlitePool::connect("sqlite:data/slaves.db").await?;
     
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS slaves (
