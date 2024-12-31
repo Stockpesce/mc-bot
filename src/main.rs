@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
+fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) where {
     tokio::spawn(async move {
         let account = Account::offline(&username);
         let state = State {
@@ -135,7 +135,7 @@ async fn login(bot: &Client, event: &Event, state: &State) -> anyhow::Result<boo
 }
 
 // Then modify your handle function to use this:
-async fn handle(bot: Client, event: Event, state: State) -> Result<(), anyhow::Error> {
+async fn handle(bot: Client, event: Event, state: State) -> Result<(), anyhow::Error> + Send {
     if !login(&bot, &event, &state).await? {
         return Ok(());
     }
