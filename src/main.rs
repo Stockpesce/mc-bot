@@ -1,8 +1,10 @@
 use azalea::prelude::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use sqlx::SqlitePool;
 
 mod utils;
+mod db;
 use utils::ServerMessage;
 
 const WHITELIST: [&str; 3] = ["DavideGamer38", "Its_Koala", "Gr3el_"];
@@ -11,20 +13,67 @@ const MASTER_PASSWORD: &str = "iamabot";
 const PASSWORD_SALT_SECRET: &str = "JIUADSIDJSAJDSAJ";
 
 #[tokio::main]
-async fn main() {
-    let account = Account::offline(MASTER_USERNAME);
+async fn main() -> anyhow::Result<()> {
+    let db_pool = db::init_db().await?;
+    let db_pool = Arc::new(db_pool);
+
+    // Start master bot
+    let master_account = Account::offline(MASTER_USERNAME);
+    let state = State {
+        password: Arc::new(Mutex::new(String::new())),
+        has_logged_in: Arc::new(AtomicBool::new(false)),
+        db_pool: Arc::clone(&db_pool),
+    };
+
+    // Start saved slave bots
+    let slaves = db::get_slaves(&db_pool).await?;
+    for slave in slaves {
+        spawn_slave_bot(slave, Arc::clone(&db_pool));
+    }
 
     ClientBuilder::new()
         .set_handler(handle)
-        .start(account, "mc.brailor.me")
-        .await
-        .unwrap();
+        .set_state(state)
+        .start(master_account, "mc.brailor.me")
+        .await?;
+
+    Ok(())
 }
 
-#[derive(Default, Clone, Component)]
+fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
+    tokio::spawn(async move {
+        let account = Account::offline(&username);
+        let state = State {
+            password: Arc::new(Mutex::new(String::new())),
+            has_logged_in: Arc::new(AtomicBool::new(false)),
+            db_pool,
+        };
+
+        loop {
+            if let Err(e) = ClientBuilder::new()
+                .set_handler(handle)
+                .set_state(state.clone())
+                .start(account.clone(), "mc.brailor.me")
+                .await
+            {
+                eprintln!("Slave bot {} error: {}", username, e);
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            }
+        }
+    });
+}
+
+#[derive(Clone, Component)]
 pub struct State {
     password: Arc<Mutex<String>>,
     has_logged_in: Arc<AtomicBool>,
+    db_pool: Arc<SqlitePool>,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        panic!("State must be initialized with a database connection");
+    }
 }
 
 impl State {
@@ -116,6 +165,17 @@ async fn handle(bot: Client, event: Event, state: State) -> anyhow::Result<()> {
                         return Ok(());
                     }
                     println!("DM from {} to {}: {}", from, to, content);
+
+                    // Handle spawn command if this is the master bot
+                    if bot.username() == MASTER_USERNAME && content.starts_with("spawn ") {
+                        if let Some(slave_name) = content.strip_prefix("spawn ") {
+                            db::add_slave(&state.db_pool, slave_name).await?;
+                            spawn_slave_bot(slave_name.to_string(), Arc::clone(&state.db_pool));
+                            bot.send_command_packet(&format!("whisper {from} Spawned slave bot: {slave_name}"));
+                            return Ok(());
+                        }
+                    }
+
                     bot.send_command_packet(&format!("whisper {from} {content}"));
                 }
                 ServerMessage::Unknown(msg) => {
