@@ -35,9 +35,7 @@ async fn main() -> anyhow::Result<()> {
         .set_handler(handle)
         .set_state(state)
         .start(master_account, "mc.brailor.me")
-        .await?;
-
-    Ok(())
+        .await
 }
 
 fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
@@ -50,14 +48,18 @@ fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
         };
 
         loop {
-            if let Err(e) = ClientBuilder::new()
+            let result = ClientBuilder::new()
                 .set_handler(handle)
                 .set_state(state.clone())
                 .start(account.clone(), "mc.brailor.me")
-                .await
-            {
-                eprintln!("Slave bot {} error: {}", username, e);
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                .await;
+
+            match result {
+                Ok(_) => break, // Bot exited successfully
+                Err(e) => {
+                    eprintln!("Slave bot {} error: {}", username, e);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                }
             }
         }
     });
