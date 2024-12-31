@@ -1,5 +1,5 @@
-use azalea::prelude::*;
-use bevy_ecs::prelude::*;
+use azalea::prelude::{self, Event as AzaleaEvent};
+use bevy_ecs::prelude::Component;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use sqlx::SqlitePool;
@@ -82,7 +82,7 @@ pub struct State {
 }
 
 impl Component for State {
-    type Storage = HashMapStorage<Self>;
+    type STORAGE_TYPE = bevy_ecs::storage::TableStorage;
 }
 
 impl Default for State {
@@ -105,7 +105,7 @@ fn generate_password(username: &str) -> String {
     ))
 }
 
-async fn login(bot: &Client, event: &Event, state: &State) -> anyhow::Result<bool> {
+async fn login(bot: &Client, event: &AzaleaEvent, state: &State) -> anyhow::Result<bool> {
     if state.has_logged_in.load(Ordering::SeqCst) {
         return Ok(true);
     }
@@ -140,7 +140,7 @@ async fn login(bot: &Client, event: &Event, state: &State) -> anyhow::Result<boo
 }
 
 // Then modify your handle function to use this:
-async fn handle(bot: Client, event: Event, state: State) -> anyhow::Result<()> {
+async fn handle(bot: Client, event: AzaleaEvent, state: State) -> anyhow::Result<()> {
     if !login(&bot, &event, &state).await? {
         return Ok(());
     }
