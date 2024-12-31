@@ -13,6 +13,7 @@ const MASTER_PASSWORD: &str = "iamabot";
 const PASSWORD_SALT_SECRET: &str = "JIUADSIDJSAJDSAJ";
 
 #[tokio::main]
+#[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let db_pool = db::init_db().await?;
     let db_pool = Arc::new(db_pool);
@@ -21,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let master_account = Account::offline(MASTER_USERNAME);
     let state = State {
         password: Arc::new(Mutex::new(String::new())),
-        has_logged_in: Arc::new(AtomicBool::new(false)),
+        has_logged_in: Arc::new(AtomicBool::new(false)), 
         db_pool: Arc::clone(&db_pool),
     };
 
@@ -36,6 +37,9 @@ async fn main() -> anyhow::Result<()> {
         .set_state(state)
         .start(master_account, "mc.brailor.me")
         .await
+        .map_err(|e| anyhow::anyhow!("Failed to start bot: {}", e))?;
+
+    Ok(())
 }
 
 fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
@@ -127,7 +131,7 @@ async fn login(bot: &Client, event: &Event, state: &State) -> anyhow::Result<boo
 }
 
 // Then modify your handle function to use this:
-async fn handle(bot: Client, event: Event, state: State) -> anyhow::Result<()> {
+async fn handle(bot: Client, event: Event, state: State) -> Result<(), anyhow::Error> {
     if !login(&bot, &event, &state).await? {
         return Ok(());
     }
