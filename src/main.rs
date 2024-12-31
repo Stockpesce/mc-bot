@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Start master bot in the background
-    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + Sync + 'static>> {
+    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
         Box::pin(handle(client, event, state))
     };
 
@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
-    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + Sync + 'static>> {
+    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>> {
         Box::pin(handle(client, event, state))
     };
 
@@ -91,6 +91,9 @@ pub struct State {
     has_logged_in: Arc<AtomicBool>,
     db_pool: Arc<SqlitePool>,
 }
+
+unsafe impl Send for State {}
+unsafe impl Sync for State {}
 
 impl Component for State {
     const STORAGE_TYPE: StorageType = StorageType::Table;
