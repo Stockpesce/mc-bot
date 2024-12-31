@@ -74,6 +74,7 @@ fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
 }
 
 #[derive(Clone, Component)]
+#[component(storage = "HashMapStorage")]
 pub struct State {
     password: Arc<Mutex<String>>,
     has_logged_in: Arc<AtomicBool>,
@@ -135,7 +136,7 @@ async fn login(bot: &Client, event: &Event, state: &State) -> anyhow::Result<boo
 }
 
 // Then modify your handle function to use this:
-async fn handle(bot: Client, event: Event, state: State) -> Result<(), anyhow::Error> + Send {
+async fn handle(bot: Client, event: Event, state: State) -> anyhow::Result<()> {
     if !login(&bot, &event, &state).await? {
         return Ok(());
     }
