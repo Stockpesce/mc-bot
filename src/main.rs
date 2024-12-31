@@ -13,7 +13,6 @@ const MASTER_PASSWORD: &str = "iamabot";
 const PASSWORD_SALT_SECRET: &str = "JIUADSIDJSAJDSAJ";
 
 #[tokio::main]
-#[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let db_pool = db::init_db().await?;
     let db_pool = Arc::new(db_pool);
@@ -32,13 +31,18 @@ async fn main() -> anyhow::Result<()> {
         spawn_slave_bot(slave, Arc::clone(&db_pool));
     }
 
-    ClientBuilder::new()
-        .set_handler(handle)
-        .set_state(state)
-        .start(master_account, "mc.brailor.me")
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to start bot: {}", e))?;
+    // Start master bot in the background
+    tokio::spawn(async move {
+        ClientBuilder::new()
+            .set_handler(handle)
+            .set_state(state)
+            .start(master_account, "mc.brailor.me")
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to start bot: {}", e))
+    });
 
+    // Keep the main task running
+    tokio::signal::ctrl_c().await?;
     Ok(())
 }
 
@@ -131,7 +135,7 @@ async fn login(bot: &Client, event: &Event, state: &State) -> anyhow::Result<boo
 }
 
 // Then modify your handle function to use this:
-async fn handle(bot: Client, event: Event, state: State) -> Result<(), anyhow::Error> {
+async fn handle(bot: Client, event: Event, state: State) -> Result<(), anyhow::Error> + Send {
     if !login(&bot, &event, &state).await? {
         return Ok(());
     }
