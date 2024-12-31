@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Start master bot in the background
-    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'static>> {
+    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + Sync + 'static>> {
         Box::pin(handle(client, event, state))
     };
 
@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 fn spawn_slave_bot(username: String, db_pool: Arc<SqlitePool>) {
-    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + 'static>> {
+    let handler = move |client: Client, event: Event, state: State| -> Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send + Sync + 'static>> {
         Box::pin(handle(client, event, state))
     };
 
@@ -152,7 +152,7 @@ async fn login(bot: &Client, event: &AzaleaEvent, state: State) -> anyhow::Resul
 
 // Then modify your handle function to use this:
 async fn handle(bot: Client, event: AzaleaEvent, state: State) -> anyhow::Result<()> {
-    if !login(&bot, &event, state).await? {
+    if !login(&bot, &event, state.clone()).await? {
         return Ok(());
     }
 
