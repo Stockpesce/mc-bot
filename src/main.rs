@@ -1,4 +1,4 @@
-use azalea::prelude::{self, Event as AzaleaEvent};
+use azalea::{prelude::*, Account, Client, ClientBuilder, Event};
 use bevy_ecs::prelude::Component;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
