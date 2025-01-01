@@ -191,8 +191,6 @@ where
 async fn handle_chat_event(bot: Client, m: ChatPacket, state: State) -> anyhow::Result<()>
 where
     Client: Send + Sync + 'static,
-    Event: Send + Sync + 'static,
-    State: Send + Sync + 'static,
 {
     let None = m.username() else { return Ok(()) };
 
