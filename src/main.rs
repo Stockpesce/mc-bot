@@ -52,7 +52,7 @@ pub struct State {
 
 impl State {
     fn for_user(username: &str) -> Self {
-        let plain = format!("{PASSWORD_SALT_SECRET}{username}{PASSWORD_SALT_SECRET}");
+        let plain = format!("{}{username}{}", *PASSWORD_SALT_SECRET, *PASSWORD_SALT_SECRET);
         let mut password = sha256::digest(plain);
         password.truncate(20);
         Self::new(password)
@@ -90,7 +90,7 @@ fn main() -> anyhow::Result<()> {
                 .set_state(State::new(MASTER_PASSWORD.to_string()))
                 .start(
                     Account::offline(&MASTER_USERNAME),
-                    &SERVER_HOSTNAME,
+                    &*SERVER_HOSTNAME,
                 ),
         )?
     });
@@ -126,7 +126,7 @@ fn spawn_slave_bot(username: String) -> anyhow::Result<()> {
                     .set_state(State::for_user(&username))
                     .start(
                         Account::offline(&username),
-                        &SERVER_HOSTNAME,
+                        &*SERVER_HOSTNAME,
                     )
                     .await;
 
@@ -210,7 +210,7 @@ where
         RegisterPrompt | LoginPrompt | LoginSuccess => (),
         TeleportRequest(username) => {
             println!("Received teleport request from: {username}");
-            if WHITELIST.contains(&username) {
+            if WHITELIST.contains(&username.to_string()) {
                 bot.send_command_packet(&format!("tpaccept {username}"));
                 println!("Accepted teleport request from {username}");
             } else {
