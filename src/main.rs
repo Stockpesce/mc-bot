@@ -21,6 +21,13 @@ static SERVER_HOSTNAME: LazyLock<String> = LazyLock::new(|| {
     env::var("SERVER_HOSTNAME").expect("SERVER_HOSTNAME must be set")
 });
 
+static SERVER_PORT: LazyLock<u16> = LazyLock::new(|| {
+    env::var("SERVER_PORT")
+        .expect("SERVER_PORT must be set")
+        .parse()
+        .expect("SERVER_PORT must be a valid port number")
+});
+
 static WHITELIST: LazyLock<Vec<String>> = LazyLock::new(|| {
     env::var("WHITELIST")
         .expect("WHITELIST must be set")
@@ -91,7 +98,11 @@ fn main() -> anyhow::Result<()> {
                 .set_state(State::new(MASTER_PASSWORD.to_string()))
                 .start(
                     Account::offline(&MASTER_USERNAME),
-                    SERVER_HOSTNAME.to_socket_addrs().unwrap().next().unwrap(),
+                    format!("{}:{}", *SERVER_HOSTNAME, *SERVER_PORT)
+                        .to_socket_addrs()
+                        .unwrap()
+                        .next()
+                        .unwrap(),
                 ),
         )?
     });
@@ -127,7 +138,11 @@ fn spawn_slave_bot(username: String) -> anyhow::Result<()> {
                     .set_state(State::for_user(&username))
                     .start(
                         Account::offline(&username),
-                        SERVER_HOSTNAME.to_socket_addrs().unwrap().next().unwrap(),
+                        format!("{}:{}", *SERVER_HOSTNAME, *SERVER_PORT)
+                            .to_socket_addrs()
+                            .unwrap()
+                            .next()
+                            .unwrap(),
                     )
                     .await;
 
