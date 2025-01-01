@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dotenv = "0.15.0"
 anyhow = "1.0.95"
 bevy_ecs = "0.15.0"
 rand = "0.8.5"
