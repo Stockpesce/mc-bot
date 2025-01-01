@@ -7,19 +7,19 @@ use dotenv::dotenv;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
 use std::env;
+use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::net::ToSocketAddrs;
 use tokio::sync::OnceCell;
+use tokio::task::LocalSet;
 use utils::LookAtStuffPlugin;
 
 mod db;
 mod utils;
 use utils::{Command, DirectMessage, ServerMessage};
 
-static SERVER_HOSTNAME: LazyLock<String> = LazyLock::new(|| {
-    env::var("SERVER_HOSTNAME").expect("SERVER_HOSTNAME must be set")
-});
+static SERVER_HOSTNAME: LazyLock<String> =
+    LazyLock::new(|| env::var("SERVER_HOSTNAME").expect("SERVER_HOSTNAME must be set"));
 
 static SERVER_PORT: LazyLock<u16> = LazyLock::new(|| {
     env::var("SERVER_PORT")
@@ -36,17 +36,14 @@ static WHITELIST: LazyLock<Vec<String>> = LazyLock::new(|| {
         .collect()
 });
 
-static MASTER_USERNAME: LazyLock<String> = LazyLock::new(|| {
-    env::var("MASTER_USERNAME").expect("MASTER_USERNAME must be set")
-});
+static MASTER_USERNAME: LazyLock<String> =
+    LazyLock::new(|| env::var("MASTER_USERNAME").expect("MASTER_USERNAME must be set"));
 
-static MASTER_PASSWORD: LazyLock<String> = LazyLock::new(|| {
-    env::var("MASTER_PASSWORD").expect("MASTER_PASSWORD must be set")
-});
+static MASTER_PASSWORD: LazyLock<String> =
+    LazyLock::new(|| env::var("MASTER_PASSWORD").expect("MASTER_PASSWORD must be set"));
 
-static PASSWORD_SALT_SECRET: LazyLock<String> = LazyLock::new(|| {
-    env::var("PASSWORD_SALT_SECRET").expect("PASSWORD_SALT_SECRET must be set")
-});
+static PASSWORD_SALT_SECRET: LazyLock<String> =
+    LazyLock::new(|| env::var("PASSWORD_SALT_SECRET").expect("PASSWORD_SALT_SECRET must be set"));
 
 static DB_POOL: OnceCell<SqlitePool> = OnceCell::const_new();
 
@@ -60,7 +57,10 @@ pub struct State {
 
 impl State {
     fn for_user(username: &str) -> Self {
-        let plain = format!("{}{username}{}", *PASSWORD_SALT_SECRET, *PASSWORD_SALT_SECRET);
+        let plain = format!(
+            "{}{username}{}",
+            *PASSWORD_SALT_SECRET, *PASSWORD_SALT_SECRET
+        );
         let mut password = sha256::digest(plain);
         password.truncate(20);
         Self::new(password)
@@ -82,39 +82,41 @@ impl State {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     dotenv().ok();
-    let runtime = utils::runtime()?;
-    let db_pool = runtime.block_on(db::init_db())?;
+    // let runtime = utils::runtime()?;
+    let db_pool = db::init_db().await?;
     DB_POOL.set(db_pool)?;
     let db_pool = DB_POOL.get().with_context(|| "DB was not initialized!")?;
 
-    // Start master bot
-    std::thread::spawn(|| -> anyhow::Result<()> {
-        utils::runtime()?.block_on(
-            ClientBuilder::new()
-                .set_handler(handle)
-                .add_plugins(LookAtStuffPlugin)
-                .set_state(State::new(MASTER_PASSWORD.to_string()))
-                .start(
-                    Account::offline(&MASTER_USERNAME),
-                    format!("{}:{}", *SERVER_HOSTNAME, *SERVER_PORT)
-                        .to_socket_addrs()
-                        .unwrap()
-                        .next()
-                        .unwrap(),
-                ),
-        )?
-    });
-
-    // Start saved slave bots
-    let slaves = runtime.block_on(db::get_slaves(db_pool))?;
+    let slaves = db::get_slaves(db_pool).await?;
     for slave in slaves {
         spawn_slave_bot(slave)?;
     }
 
-    // Keep the main task running
-    runtime.block_on(tokio::signal::ctrl_c())?;
+    tokio::spawn(async {
+        tokio::signal::ctrl_c().await.unwrap();
+        std::process::exit(0);
+    });
+
+    let set = LocalSet::new();
+    set.spawn_local(
+        ClientBuilder::new()
+            .set_handler(handle)
+            .add_plugins(LookAtStuffPlugin)
+            .set_state(State::new(MASTER_PASSWORD.to_string()))
+            .start(
+                Account::offline(&MASTER_USERNAME),
+                format!("{}:{}", *SERVER_HOSTNAME, *SERVER_PORT)
+                    .to_socket_addrs()
+                    .unwrap()
+                    .next()
+                    .unwrap(),
+            ),
+    );
+
+    set.await;
     Ok(())
 }
 
@@ -185,6 +187,7 @@ where
     Event: Send + Sync + 'static,
     State: Send + Sync + 'static,
 {
+    #[allow(clippy::single_match)]
     match event {
         // Event::Init => todo!(),
         // Event::Login => todo!(),
