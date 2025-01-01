@@ -1,13 +1,25 @@
 use anyhow::Result;
-use sqlx::sqlite::SqlitePool;
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
+use std::path::Path;
 
 pub async fn init_db() -> Result<SqlitePool> {
-    let pool = SqlitePool::connect("sqlite:data/slaves.db").await?;
-    
+    let data_dir = Path::new("data");
+    if !data_dir.exists() {
+        std::fs::create_dir(data_dir)?;
+    }
+
+    let options = SqliteConnectOptions::new()
+        .filename("data/slaves.db")
+        .create_if_missing(true);
+
+    let pool = SqlitePool::connect_with(options).await?;
+
     sqlx::query(
-        "CREATE TABLE IF NOT EXISTS slaves (
+        r#"
+        CREATE TABLE IF NOT EXISTS slaves (
             username TEXT PRIMARY KEY
-        )"
+        )
+        "#,
     )
     .execute(&pool)
     .await?;

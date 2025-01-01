@@ -1,118 +1,185 @@
+use azalea::entity::metadata::Player;
+use azalea::entity::{EyeHeight, LocalEntity, Position};
+use azalea::nearest_entity::EntityFinder;
+use azalea::prelude::GameTick;
+use azalea::LookAtEvent;
+use bevy_app::Plugin;
+use bevy_ecs::{
+    prelude::{Entity, EventWriter},
+    query::With,
+    system::Query,
+};
+use std::ops::Not;
+
+use anyhow::Context;
+use lazy_regex::regex;
+
+pub fn runtime() -> anyhow::Result<tokio::runtime::Runtime> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .with_context(|| "Failed to build the tokio runtime")
+}
+
 #[derive(Debug, PartialEq)]
-pub struct Message {
-    pub from: String,
-    pub to: String,
-    pub content: String,
-}
-
-pub fn parse_dm_message(input: &str) -> Option<Message> {
-    // Check if the input starts with '[' and contains ']'
-    let (s, e) = input
-        .find('[')
-        .and_then(|start| input.find(']').map(|end| (start, end)))?;
-
-    // Extract the usernames part and the message content
-    let users = &input[s + 1..e];
-    let content = input[e + 1..].trim().to_string();
-
-    // Split usernames by "->"
-    let users: Vec<&str> = users.split("->").map(|s| s.trim()).collect();
-
-    // Ensure we have exactly two usernames
-    if users.len() != 2 {
-        return None;
-    }
-
-    Some(Message {
-        from: users[0].to_string(),
-        to: users[1].to_string(),
-        content,
-    })
-}
-
-#[derive(Debug)]
-pub enum ServerMessage {
-    LoginPrompt(String), // Contains the prompt message
+pub enum ServerMessage<'a> {
+    RegisterPrompt,
+    LoginPrompt,
     LoginSuccess,
-    TeleportRequest(String), // Contains the username
-    DirectMessage {
-        from: String,
-        to: String,
-        content: String,
-    },
-    Unknown(String), // For unhandled messages
+    TeleportRequest(&'a str),
+    Dm(DirectMessage<'a>),
+    Unknown(&'a str),
 }
 
-pub fn parse_server_message(message: &str) -> ServerMessage {
-    // Login related messages
-    if message.contains("/register <password>") {
-        return ServerMessage::LoginPrompt("register".to_string());
-    }
-    if message.contains("/login <password>") {
-        return ServerMessage::LoginPrompt("login".to_string());
-    }
-    if message.contains("Successful login!") {
-        return ServerMessage::LoginSuccess;
-    }
+impl ServerMessage<'_> {
+    pub fn parse(message: &str) -> ServerMessage<'_> {
+        use ServerMessage::*;
 
-    // Teleport requests
-    if message.contains("has requested to teleport to you") {
-        if let Some(username) = message.split(" has requested").next() {
-            return ServerMessage::TeleportRequest(username.to_string());
+        if message.contains("/register <password>") {
+            return RegisterPrompt;
+        }
+        if message.contains("/login <password>") {
+            return LoginPrompt;
+        }
+        if message.contains("Successful login!") {
+            return LoginSuccess;
+        }
+        if let Some((username, _)) = message.split_once(" has requested to teleport to you") {
+            return TeleportRequest(username);
+        }
+        if let Some(dm) = DirectMessage::parse(message) {
+            return Dm(dm);
+        }
+        Unknown(message)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DirectMessage<'a> {
+    pub from: &'a str,
+    pub to: &'a str,
+    pub command: Command<'a>,
+}
+
+impl DirectMessage<'_> {
+    /*pub fn parse(input: &str) -> Option<DirectMessage<'_>> {
+        let s = input.find('[')?;
+        let e = input[s..].find(']')?;
+
+        let users = &input[s + 1..e];
+        let content = input[e + 1..].trim();
+
+        let (from, to) = users.split_once(" -> ")?;
+        Some(DirectMessage {
+            from,
+            to,
+            command: content,
+        })
+    }*/
+
+    pub fn parse(input: &str) -> Option<DirectMessage<'_>> {
+        let captures = regex!(
+            r"^\[(?<from>[a-zA-Z0-9_]{2,16}) -> (?<to>[a-zA-Z0-9_]{2,16})\] (?<content>.+)$"
+        )
+        .captures(input)?;
+
+        let from = captures.name("from")?.as_str();
+        let to = captures.name("to")?.as_str();
+        let content = captures.name("content")?.as_str();
+
+        Some(DirectMessage {
+            from,
+            to,
+            command: Command::parse(content),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Command<'a> {
+    /// `spawn <name>` crea un nuovo bot con il nome indicato
+    Spawn(&'a str),
+    /// `tpask <username>` manda una richiesta di teleport al giocatore che ha mandato il messaggio
+    TeleportAsk(&'a str),
+    /// `disconnect / kill` logoutdel bot
+    Disconnect,
+    /// `echo <message>` Il bot scrive in chat il messaggio indicato
+    EchoGlobal(&'a str),
+    /// Mostra l'help
+    Help(Option<&'a str>),
+    Unrecognized(&'a str),
+}
+
+fn parse_command_parts(input: &str) -> Option<(&str, &str)> {
+    let captures = regex!(r"^(?<command>\S+)(?: (?<params>.+))?$").captures(input)?;
+
+    let command = captures.name("command")?.as_str();
+    // optional params
+    let params = captures.name("params").map(|m| m.as_str()).unwrap_or("");
+
+    Some((command, params))
+}
+
+// a che serve here?
+// 1. sono a casa mia e devo andare in miniera
+// 2. scrivo /whisper bot here casa
+// 3. il bot mi chiede il /tpask e lo accetto
+// 4. vado in miniera
+// 5 faccio /tpask casa e il bot mi teletrasporta
+//
+// :CCC
+
+fn parse_spawn_command_params(params: &str) -> Option<Command<'_>> {
+    let captures = regex!(r"^(?<name>[a-zA-Z0-9_]{2,16})$").captures(params)?;
+    Some(Command::Spawn(captures.name("name")?.as_str()))
+}
+
+impl Command<'_> {
+    pub fn parse(input: &str) -> Command<'_> {
+        let Some((command, params)) = parse_command_parts(input) else {
+            return Command::Unrecognized(input);
+        };
+        match command {
+            "spawn" => parse_spawn_command_params(params).unwrap_or(Command::Unrecognized(input)),
+            "echo" => Command::EchoGlobal(params),
+            "help" => Command::Help(params.is_empty().not().then_some(params)),
+            "tpask" => Command::TeleportAsk(params),
+            "disconnect" => Command::Disconnect,
+            _ => Command::Unrecognized(input),
         }
     }
-
-    // Direct messages - using your existing parse_message function
-    if let Some(dm) = parse_dm_message(message) {
-        return ServerMessage::DirectMessage {
-            from: dm.from,
-            to: dm.to,
-            content: dm.content,
-        };
-    }
-
-    // Default case for unhandled messages
-    ServerMessage::Unknown(message.to_string())
 }
 
-// Example usage:
-fn main() {
-    let input = "[alice -> bob] Hello, how are you?";
-    match parse_dm_message(input) {
-        Some(msg) => println!("{:?}", msg),
-        None => println!("Invalid message format"),
+// https://github.com/azalea-rs/azalea/blob/615d8f9d2ac56b3244d328587243301da253eafd/azalea/examples/nearest_entity.rs
+
+pub struct LookAtStuffPlugin;
+impl Plugin for LookAtStuffPlugin {
+    fn build(&self, app: &mut bevy_app::App) {
+        app.add_systems(GameTick, (look_at_everything,));
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_valid_message() {
-        let input = "[alice -> bob] Hello, how are you?";
-        let expected = Message {
-            from: "alice".to_string(),
-            to: "bob".to_string(),
-            content: "Hello, how are you?".to_string(),
+fn look_at_everything(
+    bots: Query<Entity, (With<LocalEntity>, With<Player>)>,
+    entities: EntityFinder,
+    entity_positions: Query<(&Position, Option<&EyeHeight>)>,
+    mut look_at_event: EventWriter<LookAtEvent>,
+) {
+    for bot_id in bots.iter() {
+        let Some(entity) = entities.nearest_to_entity(bot_id, 16.0) else {
+            continue;
         };
-        assert_eq!(parse_dm_message(input), Some(expected));
-    }
 
-    #[test]
-    fn test_invalid_format() {
-        let input = "alice -> bob] Hello";
-        assert_eq!(parse_dm_message(input), None);
-    }
+        let (position, eye_height) = entity_positions.get(entity).unwrap();
 
-    #[test]
-    fn test_missing_message() {
-        let input = "[alice -> bob]";
-        let expected = Message {
-            from: "alice".to_string(),
-            to: "bob".to_string(),
-            content: "".to_string(),
-        };
-        assert_eq!(parse_dm_message(input), Some(expected));
+        let mut look_target = **position;
+        if let Some(eye_height) = eye_height {
+            look_target.y += **eye_height as f64;
+        }
+
+        look_at_event.send(LookAtEvent {
+            entity: bot_id,
+            position: look_target,
+        });
     }
 }
