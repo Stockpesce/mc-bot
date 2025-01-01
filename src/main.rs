@@ -3,8 +3,10 @@ use azalea::chat::ChatPacket;
 use azalea::{Account, Client, ClientBuilder, Event};
 use bevy_ecs::component::StorageType;
 use bevy_ecs::prelude::Component;
+use dotenv::dotenv;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
+use std::env;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use tokio::sync::OnceCell;
@@ -14,11 +16,13 @@ mod db;
 mod utils;
 use utils::{Command, DirectMessage, ServerMessage};
 
-const SERVER_HOSTNAME: &str = "mc.brailor.me";
-const WHITELIST: &[&str] = &["DavideGamer38", "Its_Koala", "Gr3el_", "Jiniux"];
-const MASTER_USERNAME: &str = "bot";
-const MASTER_PASSWORD: &str = "iamabot";
-const PASSWORD_SALT_SECRET: &str = "JIUADSIDJSAJDSAJ";
+static WHITELIST: LazyLock<Vec<String>> = LazyLock::new(|| {
+    env::var("WHITELIST")
+        .expect("WHITELIST must be set")
+        .split(',')
+        .map(String::from)
+        .collect()
+});
 
 static DB_POOL: OnceCell<SqlitePool> = OnceCell::const_new();
 
@@ -32,7 +36,8 @@ pub struct State {
 
 impl State {
     fn for_user(username: &str) -> Self {
-        let plain = format!("{PASSWORD_SALT_SECRET}{username}{PASSWORD_SALT_SECRET}");
+        let salt = env::var("PASSWORD_SALT_SECRET").expect("PASSWORD_SALT_SECRET must be set");
+        let plain = format!("{salt}{username}{salt}");
         let mut password = sha256::digest(plain);
         password.truncate(20);
         Self::new(password)
@@ -55,6 +60,7 @@ impl State {
 }
 
 fn main() -> anyhow::Result<()> {
+    dotenv().ok();
     let runtime = utils::runtime()?;
     let db_pool = runtime.block_on(db::init_db())?;
     DB_POOL.set(db_pool)?;
@@ -66,8 +72,11 @@ fn main() -> anyhow::Result<()> {
             ClientBuilder::new()
                 .set_handler(handle)
                 .add_plugins(LookAtStuffPlugin)
-                .set_state(State::new(MASTER_PASSWORD.into()))
-                .start(Account::offline(MASTER_USERNAME), SERVER_HOSTNAME),
+                .set_state(State::new(env::var("MASTER_PASSWORD").expect("MASTER_PASSWORD must be set")))
+                .start(
+                    Account::offline(&env::var("MASTER_USERNAME").expect("MASTER_USERNAME must be set")),
+                    &env::var("SERVER_HOSTNAME").expect("SERVER_HOSTNAME must be set"),
+                ),
         )?
     });
 
@@ -100,7 +109,10 @@ fn spawn_slave_bot(username: String) -> anyhow::Result<()> {
                     .set_handler(handle)
                     .add_plugins(LookAtStuffPlugin)
                     .set_state(State::for_user(&username))
-                    .start(Account::offline(&username), SERVER_HOSTNAME)
+                    .start(
+                        Account::offline(&username),
+                        &env::var("SERVER_HOSTNAME").expect("SERVER_HOSTNAME must be set"),
+                    )
                     .await;
 
                 match result {
@@ -200,7 +212,7 @@ where
             command,
         }) => {
             println!("DM from {from}: {command:?}");
-            if !WHITELIST.contains(&from) {
+            if !WHITELIST.contains(&from.to_string()) {
                 bot.send_command_packet(&format!(
                     "whisper {from} You are not allowed to send commands"
                 ));
@@ -209,7 +221,7 @@ where
             use Command::*;
             match command {
                 // Handle spawn command if this is the master bot
-                Spawn(slave_name) if bot.username() == MASTER_USERNAME => {
+                Spawn(slave_name) if bot.username() == env::var("MASTER_USERNAME").expect("MASTER_USERNAME must be set") => {
                     let db_pool = DB_POOL.get().with_context(|| "DB was not initialized!")?;
                     db::add_slave(db_pool, slave_name).await?;
                     spawn_slave_bot(slave_name.to_string())?;
