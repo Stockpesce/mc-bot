@@ -16,12 +16,28 @@ mod db;
 mod utils;
 use utils::{Command, DirectMessage, ServerMessage};
 
+static SERVER_HOSTNAME: LazyLock<String> = LazyLock::new(|| {
+    env::var("SERVER_HOSTNAME").expect("SERVER_HOSTNAME must be set")
+});
+
 static WHITELIST: LazyLock<Vec<String>> = LazyLock::new(|| {
     env::var("WHITELIST")
         .expect("WHITELIST must be set")
         .split(',')
         .map(String::from)
         .collect()
+});
+
+static MASTER_USERNAME: LazyLock<String> = LazyLock::new(|| {
+    env::var("MASTER_USERNAME").expect("MASTER_USERNAME must be set")
+});
+
+static MASTER_PASSWORD: LazyLock<String> = LazyLock::new(|| {
+    env::var("MASTER_PASSWORD").expect("MASTER_PASSWORD must be set")
+});
+
+static PASSWORD_SALT_SECRET: LazyLock<String> = LazyLock::new(|| {
+    env::var("PASSWORD_SALT_SECRET").expect("PASSWORD_SALT_SECRET must be set")
 });
 
 static DB_POOL: OnceCell<SqlitePool> = OnceCell::const_new();
@@ -36,8 +52,7 @@ pub struct State {
 
 impl State {
     fn for_user(username: &str) -> Self {
-        let salt = env::var("PASSWORD_SALT_SECRET").expect("PASSWORD_SALT_SECRET must be set");
-        let plain = format!("{salt}{username}{salt}");
+        let plain = format!("{PASSWORD_SALT_SECRET}{username}{PASSWORD_SALT_SECRET}");
         let mut password = sha256::digest(plain);
         password.truncate(20);
         Self::new(password)
@@ -72,10 +87,10 @@ fn main() -> anyhow::Result<()> {
             ClientBuilder::new()
                 .set_handler(handle)
                 .add_plugins(LookAtStuffPlugin)
-                .set_state(State::new(env::var("MASTER_PASSWORD").expect("MASTER_PASSWORD must be set")))
+                .set_state(State::new(MASTER_PASSWORD.to_string()))
                 .start(
-                    Account::offline(&env::var("MASTER_USERNAME").expect("MASTER_USERNAME must be set")),
-                    &env::var("SERVER_HOSTNAME").expect("SERVER_HOSTNAME must be set"),
+                    Account::offline(&MASTER_USERNAME),
+                    &SERVER_HOSTNAME,
                 ),
         )?
     });
@@ -111,7 +126,7 @@ fn spawn_slave_bot(username: String) -> anyhow::Result<()> {
                     .set_state(State::for_user(&username))
                     .start(
                         Account::offline(&username),
-                        &env::var("SERVER_HOSTNAME").expect("SERVER_HOSTNAME must be set"),
+                        &SERVER_HOSTNAME,
                     )
                     .await;
 
@@ -221,7 +236,7 @@ where
             use Command::*;
             match command {
                 // Handle spawn command if this is the master bot
-                Spawn(slave_name) if bot.username() == env::var("MASTER_USERNAME").expect("MASTER_USERNAME must be set") => {
+                Spawn(slave_name) if bot.username() == MASTER_USERNAME.as_str() => {
                     let db_pool = DB_POOL.get().with_context(|| "DB was not initialized!")?;
                     db::add_slave(db_pool, slave_name).await?;
                     spawn_slave_bot(slave_name.to_string())?;
