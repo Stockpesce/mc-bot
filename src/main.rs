@@ -91,7 +91,7 @@ fn main() -> anyhow::Result<()> {
                 .set_state(State::new(MASTER_PASSWORD.to_string()))
                 .start(
                     Account::offline(&MASTER_USERNAME),
-                    &*SERVER_HOSTNAME.to_socket_addrs().unwrap().next().unwrap(),
+                    SERVER_HOSTNAME.to_socket_addrs().unwrap().next().unwrap(),
                 ),
         )?
     });
@@ -127,7 +127,7 @@ fn spawn_slave_bot(username: String) -> anyhow::Result<()> {
                     .set_state(State::for_user(&username))
                     .start(
                         Account::offline(&username),
-                        &*SERVER_HOSTNAME.to_socket_addrs().unwrap().next().unwrap(),
+                        SERVER_HOSTNAME.to_socket_addrs().unwrap().next().unwrap(),
                     )
                     .await;
 
